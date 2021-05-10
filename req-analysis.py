@@ -28,13 +28,6 @@ COLUMN_HEADERS = [
 # ---------- HELPER FUNCTIONS ---------
 
 
-def createOutputFileWithHeaders(list):
-    print('Creating output.csv...')
-
-    empty_df = pd.DataFrame(columns=[COLUMN_HEADERS])
-    empty_df.to_csv(OUTPUT_CSV, index=False)
-
-
 def getRolesAndKeywordsRequired(selection):
     print('Getting required roles and keywords...')
     if selection == 'agile':
@@ -56,36 +49,25 @@ def flattenList(listOfLists):
     return flat_list
 
 
-def processRequestFiles(list_requests):
-    print('Processing files...')
-    counter = 0
-    num_files = len(list_requests)
+def processRequests(list_requests):
+    print('Creating empty dataframe...')
+    # Create empty dataframe with headers
+    df = pd.DataFrame(columns=COLUMN_HEADERS)
+
+    print('Adding requests to empty dataframe...')
+    # Create temporary list to hold rows
+    L = []
+    # Loop over files
     for request in list_requests:
-        df = pd.read_excel(request, header=5)
+        # Create temporary dataframe
+        df_temp = pd.read_excel(request, header=5)
+        # Append temporary dataframe to temporary list
+        L.append(df_temp)
 
-        # Create mask based on pattern string
-        mask = df['Position Name'].str.contains(pattern_string)
+    # Concatenate temporary lists to empty datamframe
+    df = pd.concat(L, ignore_index=True)
 
-        # Filter dataframe based on mask
-        filtered_df = df[mask]
-
-        if not filtered_df.empty:
-            hits = filtered_df.shape[0]
-            counter += hits
-            print('Found %d hit(s)...' % hits)
-
-        # Fix line endings in column 'Role Notes'
-        filtered_df['Role Notes'].replace(to_replace=[r"_x000D_"], value=[
-            ""], regex=True, inplace=True)
-
-        # filtered_df.reindex(COLUMN_HEADERS)
-
-        # Output matches to earlier created csv file
-        filtered_df.to_csv(
-            OUTPUT_CSV, index=False, header=False, mode='a', encoding='utf-8')
-
-    print('Processing completed. %d file(s) processed, %d hit(s) found.' %
-          (num_files, counter))
+    return df
 
 
 def dropDuplicateRequests(df):
@@ -101,8 +83,10 @@ def dropDuplicateRequests(df):
     num_duplicates = rows_df - rows_df_no_dupes
     print('Dropped %d duplicate(s).' % (num_duplicates))
 
+    return df_no_dupes
 
-def addLabels():
+
+def addLabels(df):
     # Loop over roles and keywords in dictionary
     print('Adding labels...')
     for key, value in dictionary.items():
@@ -111,7 +95,7 @@ def addLabels():
         # Where value in column 'Position Name' contains regex, add key as value for new column 'Label'
         df.loc[df['Position Name'].str.contains(
             pattern_string) == True, 'Label'] = key
-
+    return df
 
 # -------------- MAIN -----------------
 
@@ -124,23 +108,23 @@ flat_list = flattenList(list_of_lists)
 # Convert flat list into joined string with pipe operators for pattern matching
 pattern_string = "|".join(flat_list)
 
-# Create csv file with headers
-createOutputFileWithHeaders(COLUMN_HEADERS)
-
 # Get file paths for requests
 list_requests = glob.glob("requests/*.xlsx")
 
-# Process files at file paths
-processRequestFiles(list_requests)
+# Add all requests to a single dataframe
+df = processRequests(list_requests)
 
-# Open resulting output csv back as dataframe, skip over bad input
-df = pd.read_csv(OUTPUT_CSV, error_bad_lines=False)
+# Drop columns with headers containing 'Unnamed'
+df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
 
-# Drop duplicates based on unique Team Request Id
-dropDuplicateRequests(df)
+# Drop coluumn 'Deadline to respond'
+df = df.drop('Deadline to respond', axis=1)
 
-# Add label to requests based on keywords for each role
-addLabels()
+# Drop duplicate requests
+df = dropDuplicateRequests(df)
+
+# Add labels
+df = addLabels(df)
 
 # Format values of column 'Role Start Date' to dates
 print('Formatting column "Role Start Date"...')
@@ -150,8 +134,12 @@ df['Role Start Date'] = pd.to_datetime(df['Role Start Date']).dt.date
 print('Sorting by date...')
 df.sort_values(by=['Role Start Date'], inplace=True)
 
-# Perform queries
-
-# Output to Excel file
-print('Generating Excel file...')
+# Generate Excel
 df.to_excel(OUTPUT_XLSX, index=False)
+
+# Fix line endings in column 'Role Notes'
+df['Role Notes'].replace(to_replace=[r"_x000D_"], value=[
+    ""], regex=True, inplace=True)
+
+# Generate csv
+df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8')
