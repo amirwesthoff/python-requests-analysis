@@ -123,7 +123,10 @@ df = df.drop('Deadline to respond', axis=1)
 # Drop duplicate requests
 df = dropDuplicateRequests(df)
 
-# Add labels
+# Set label 'Other' by default
+df['Label'] = 'Other'
+
+# Add labels for required roles
 df = addLabels(df)
 
 # Format values of column 'Role Start Date' to dates
